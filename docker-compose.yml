@@ -1,0 +1,28 @@
+version: '3'
+services:
+  plugin:
+    build:
+      context: .
+      dockerfile: Dockerfile.plugin
+    networks:
+      - app_network
+
+  coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile.coordinator
+    networks:
+      - app_network
+    depends_on:
+      - worker
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge

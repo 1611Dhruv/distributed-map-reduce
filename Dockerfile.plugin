@@ -1,0 +1,15 @@
+# Use an official Golang runtime as a parent image
+FROM golang:1.17-alpine AS builder
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Install any necessary tools or dependencies here
+
+# Set up an entrypoint script to handle dynamic builds
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["entrypoint.sh"]
+
+

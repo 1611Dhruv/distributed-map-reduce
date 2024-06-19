@@ -1,0 +1,17 @@
+# Use an official Golang runtime as a parent image
+FROM golang:1.17-alpine
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Copy the coordinator source code to the container
+COPY mr/coordinator mr/
+COPY mr/rpc.go mr/
+COPY main/mrcoordinator.go main/
+
+# Copy the entrypoint script
+COPY entrypoint_coordinator.sh /usr/local/bin/entrypoint_coordinator.sh
+RUN chmod +x /usr/local/bin/entrypoint_coordinator.sh
+
+# Set the entrypoint
+ENTRYPOINT ["entrypoint_coordinator.sh"]

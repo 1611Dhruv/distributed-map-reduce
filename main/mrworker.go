@@ -17,7 +17,7 @@ import "fmt"
 import "log"
 
 func main() {
-	if len(os.Args) != 2 {
+	if len(os.Args) != 3 {
 		fmt.Fprintf(os.Stderr, "Usage: mrworker xxx.so coordinator_host:port\n")
 		os.Exit(1)
 	}
