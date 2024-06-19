@@ -18,13 +18,13 @@ import "log"
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Fprintf(os.Stderr, "Usage: mrworker xxx.so\n")
+		fmt.Fprintf(os.Stderr, "Usage: mrworker xxx.so coordinator_host:port\n")
 		os.Exit(1)
 	}
 
 	mapf, reducef := loadPlugin(os.Args[1])
 
-	mr.Worker(mapf, reducef)
+	mr.Worker(mapf, reducef, os.Args[2])
 }
 
 // load the application Map and Reduce functions
