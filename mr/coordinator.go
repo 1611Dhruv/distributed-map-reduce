@@ -195,7 +195,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{
 		mapFiles:     make(chan FileTuple),
 		reduceNums:   make(chan int),
-		numFiles:     len(files),
+		numFiles:     len(files) - 1,
 		nReduce:      nReduce,
 		nMapDone:     0,
 		mu:           sync.Mutex{},

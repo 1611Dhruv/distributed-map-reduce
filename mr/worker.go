@@ -54,7 +54,7 @@ func ReadFile(filename string, bucketname string) ([]byte, error) {
 
 func WriteFile(filename string, contents string, bucketname string) error {
 	ctx := context.Background()
-	client, err := storage.NewClient(ctx, option.WithCredentialsFile("worker_access_key.json"))
+	client, err := storage.NewClient(ctx, option.WithCredentialsFile("key.json"))
 	if err != nil {
 		return fmt.Errorf("storage.NewClient: %v", err)
 	}
