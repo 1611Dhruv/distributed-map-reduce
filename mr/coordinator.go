@@ -40,9 +40,10 @@ func (c *Coordinator) CleanUp() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Println("Cleaning Up")
 	bucket := client.Bucket(c.gcpBucket)
 	it := bucket.Objects(ctx, &storage.Query{
-		MatchGlob: "*(mr-*([0-9])-*([0-9]))",
+		MatchGlob: "mr-[0-9]*-*",
 	})
 
 	for {
@@ -53,6 +54,7 @@ func (c *Coordinator) CleanUp() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		log.Println(objAttrs.Name)
 		if bucket.Object(objAttrs.Name).Delete(ctx) != nil {
 			log.Fatal(err)
 		}
