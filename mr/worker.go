@@ -1,14 +1,17 @@
 package mr
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io/ioutil"
 	"log"
 	"net/rpc"
-	"os"
-	"path/filepath"
+
+	"cloud.google.com/go/storage"
+	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 )
 
 // Map functions return a slice of KeyValue.
@@ -33,6 +36,62 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
+func ReadFile(filename string, bucketname string) ([]byte, error) {
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx, option.WithoutAuthentication())
+	if err != nil {
+		return nil, fmt.Errorf("storage.NewClient: %v", err)
+	}
+	bucket := client.Bucket(bucketname)
+
+	r, err := bucket.Object(filename).NewReader(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("Object(%q).NewReader: %v", filename, err)
+	}
+	defer r.Close()
+	return ioutil.ReadAll(r)
+}
+
+func WriteFile(filename string, contents string, bucketname string) error {
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx, option.WithCredentialsFile("worker_access_key.json"))
+	if err != nil {
+		return fmt.Errorf("storage.NewClient: %v", err)
+	}
+	bucket := client.Bucket(bucketname)
+	wc := bucket.Object(filename).NewWriter(ctx)
+	_, err = fmt.Fprintf(wc, contents)
+	if err != nil {
+		return fmt.Errorf("Object(%q).NewWriter: %v", filename, err)
+	}
+	if err := wc.Close(); err != nil {
+		return fmt.Errorf("Writer.Close: %v", err)
+	}
+	return nil
+}
+
+func ListFilesWithPrefix(bucketname string, prefix string) ([]string, error) {
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx, option.WithoutAuthentication())
+	if err != nil {
+		return nil, fmt.Errorf("storage.NewClient: %v", err)
+	}
+	bucket := client.Bucket(bucketname)
+	var files []string
+	it := bucket.Objects(ctx, &storage.Query{Prefix: prefix})
+	for {
+		objAttrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("Objects: %v", err)
+		}
+		files = append(files, objAttrs.Name)
+	}
+	return files, nil
+}
+
 // main/mrworker.go calls this function.
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string, coordinatorAddress string) {
@@ -42,7 +101,6 @@ func Worker(mapf func(string, string) []KeyValue,
 	// uncomment to send the Example RPC to the coordinator.
 	// CallExample()
 	log.Println("Worker started")
-
 	for {
 		task := RequestTask(coordinatorAddress)
 
@@ -61,18 +119,12 @@ func Worker(mapf func(string, string) []KeyValue,
 
 			// Makes n-reduce intermideates
 			intermediate := make([]map[string][]string, task.ReduceNo)
-			file, err := os.Open(task.MapFile)
+			content, err := ReadFile(task.MapFile, task.GcpBucket)
 
 			if err != nil {
-				log.Fatalf("cannot open %v", task.MapFile)
+				log.Fatalf("cannot open or read %v", task.MapFile)
 			}
 
-			content, err := ioutil.ReadAll(file)
-			if err != nil {
-				log.Fatalf("cannot read %v", task.MapFile)
-			}
-
-			file.Close()
 			kva := mapf(task.MapFile, string(content))
 
 			// Sort and partially reduce
@@ -104,11 +156,10 @@ func Worker(mapf func(string, string) []KeyValue,
 					log.Fatalf("Error marshalling to JSON: %v", err)
 				}
 
-				o_file, _ := os.Create(o_name)
+				err = WriteFile(o_name, string(jsonData), task.GcpBucket)
 				if err != nil {
 					log.Fatalf("Error creating file %s: %v", o_name, err)
 				}
-				fmt.Fprintf(o_file, string(jsonData))
 				log.Printf("Wrote intermediate data to %s\n", o_name)
 			}
 			num = task.MapNum
@@ -116,8 +167,8 @@ func Worker(mapf func(string, string) []KeyValue,
 		} else {
 			log.Printf("Processing reduce task: %d\n", task.ReduceNo)
 			// it is a reduce task and we shall handle it differently
-			pattern := fmt.Sprintf("mr-%d-*", task.ReduceNo)
-			files, err := filepath.Glob(pattern)
+			pattern := fmt.Sprintf("mr-%d-", task.ReduceNo)
+			files, err := ListFilesWithPrefix(task.GcpBucket, pattern)
 			if err != nil {
 				log.Fatalf("Error matching files: %v", err)
 			}
@@ -125,7 +176,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			inter_map := make(map[string][]string)
 
 			for _, file := range files {
-				data, err := ioutil.ReadFile(file)
+				data, err := ReadFile(file, task.GcpBucket)
 				if err != nil {
 					log.Printf("Error reading file %s: %v\n", file, err)
 					return
@@ -146,13 +197,17 @@ func Worker(mapf func(string, string) []KeyValue,
 			}
 
 			o_name := fmt.Sprintf("mr-out-%d", task.ReduceNo)
-			of, _ := os.Create(o_name)
 
+			content := ""
 			// Reduce the contents and output the result
 			for key, values := range inter_map {
 				out := reducef(key, values)
 				// fmt.Printf("%v %v %v %v\n",key, values, values[0] , out)
-				fmt.Fprintf(of, "%v %v\n", key, out)
+				content += fmt.Sprintf("%v %v\n", key, out)
+			}
+			err = WriteFile(o_name, content, task.GcpBucket)
+			if err != nil {
+				log.Fatalf("Error creating file %s: %v", o_name, err)
 			}
 			log.Printf("Wrote reduce output to %s\n", o_name)
 			num = task.ReduceNo
@@ -230,6 +285,7 @@ func CallExample(coordinatorAddress string) {
 // usually returns true.
 // returns false if something goes wrong.
 func call(rpcname string, args interface{}, reply interface{}, coordinatorAddress string) bool {
+	log.Printf("Calling RPC %s\n", rpcname)
 	c, err := rpc.DialHTTP("tcp", coordinatorAddress)
 	if err != nil {
 		log.Fatal("dialing:", err)

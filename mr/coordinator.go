@@ -13,6 +13,7 @@ import (
 type Coordinator struct {
 	// Your definitions here.
 	mapFiles     chan FileTuple
+	gcpBucket    string
 	reduceNums   chan int
 	numFiles     int
 	nReduce      int
@@ -31,6 +32,9 @@ type FileTuple struct {
 // Your code here -- RPC handlers for the worker to call.
 func (c *Coordinator) RequestTask(args *RequestTaskArgs, reply *RequestTaskReply) error {
 	log.Println("Worker requested a task")
+
+	// give the gcp bucket to the worker
+	reply.GcpBucket = c.gcpBucket
 
 	// Go back whenever a channel is closed
 START:
@@ -195,7 +199,8 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		nReduce:      nReduce,
 		nMapDone:     0,
 		mu:           sync.Mutex{},
-		doneMapFiles: make([]bool, len(files)),
+		gcpBucket:    files[0],
+		doneMapFiles: make([]bool, len(files)-1),
 		doneReduces:  make([]bool, nReduce),
 	}
 
@@ -205,6 +210,10 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	// Keep sending map files to the channel
 	go func() {
 		for i, file := range files {
+			// Skip the first argument
+			if i == 0 {
+				continue
+			}
 			c.mapFiles <- FileTuple{file, i}
 			log.Printf("Added map file %s (number %d) to the queue\n", file, i)
 		}

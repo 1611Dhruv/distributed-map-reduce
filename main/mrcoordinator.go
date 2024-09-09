@@ -15,8 +15,8 @@ import "os"
 import "fmt"
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: mrcoordinator inputfiles...\n")
+	if len(os.Args) < 3 {
+		fmt.Fprintf(os.Stderr, "Usage: mrcoordinator <gcpbucket_name> inputfiles...\n")
 		os.Exit(1)
 	}
 

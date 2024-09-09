@@ -29,6 +29,7 @@ type RequestTaskReply struct {
 	MapFile   string
 	MapNum    int
 	ReduceNo  int
+	GcpBucket string
 }
 
 type DoneTaskArgs struct {
