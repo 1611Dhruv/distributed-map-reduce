@@ -2,12 +2,17 @@ package mr
 
 import (
 	//	"fmt"
+	"context"
 	"log"
 	"net"
 	"net/http"
 	"net/rpc"
 	"sync"
 	"time"
+
+	"cloud.google.com/go/storage"
+	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 )
 
 type Coordinator struct {
@@ -27,6 +32,31 @@ type Coordinator struct {
 type FileTuple struct {
 	name string
 	num  int
+}
+
+func (c *Coordinator) CleanUp() {
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx, option.WithCredentialsFile("key.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	bucket := client.Bucket(c.gcpBucket)
+	it := bucket.Objects(ctx, &storage.Query{
+		MatchGlob: "*(mr-*([0-9])-*([0-9]))",
+	})
+
+	for {
+		objAttrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		if bucket.Object(objAttrs.Name).Delete(ctx) != nil {
+			log.Fatal(err)
+		}
+	}
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -151,6 +181,8 @@ func (c *Coordinator) DoneTask(args *DoneTaskArgs, reply *DoneTaskReply) error {
 			log.Println("All reduce tasks completed")
 			// Close the map channel if we mapped all the files
 			close(c.reduceNums)
+			// Cleanup the intermediate files
+			c.CleanUp()
 			c.isDone = true
 		}
 	}
