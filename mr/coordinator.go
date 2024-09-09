@@ -214,7 +214,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 			if i == 0 {
 				continue
 			}
-			c.mapFiles <- FileTuple{file, i}
+			c.mapFiles <- FileTuple{file, i - 1}
 			log.Printf("Added map file %s (number %d) to the queue\n", file, i)
 		}
 	}()
